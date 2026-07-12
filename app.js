@@ -634,9 +634,9 @@ async function loadState() {
   const revokedKeys = [
     ['AQ.', 'Ab8RN6IA', 'OuCQ4rRyB7', 'o_G-C-IK1C', 'v9_sUUdCn5F1mofIxgg1xw'].join(''),
     ['AQ.', 'Ab8RN6Jl', 'miqntaadvv-k9', 'mv73mJ-sdcAEBI', 't4WxCoglKcCkSMA'].join(''),
-    'AIzaSy', // placeholder keys
+    'PLACEHOLDER_KEY', // placeholder keys
   ];
-  if (!state.settings.apiKey || revokedKeys.some(k => state.settings.apiKey.startsWith(k))) {
+  if (!state.settings.apiKey || revokedKeys.includes(state.settings.apiKey)) {
     state.settings.apiKey = DEFAULT.apiKey;
     await saveSets();
   }
