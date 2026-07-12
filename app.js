@@ -9,7 +9,8 @@ const DEFAULT = {
   model: 'gemini-3.5-flash',
   systemPrompt: 'You are Chikki, a friendly, witty, and intelligent AI assistant. You remember everything in our conversation history. Be helpful, concise when needed, thorough when required. Use markdown for better formatting. Add a personal, warm touch to your responses.',
   temperature: 0.7,
-  theme: 'purple'
+  theme: 'purple',
+  readAloud: false
 };
 
 const KEYS = {
@@ -91,6 +92,7 @@ const D = {
   tempVal: $('temp-val'),
   toggleKey: $('toggle-key-vis'),
   themeGrid: $('theme-grid'),
+  readAloudToggle: $('read-aloud-toggle'),
   // Confirm
   confirmModal: $('confirm-modal'),
   confirmTitle: $('confirm-title'),
@@ -253,6 +255,60 @@ function initParticles() {
   init();
   draw();
   window.addEventListener('resize', () => { resize(); init(); });
+}
+
+// ===== TEXT TO SPEECH (READ ALOUD) =====
+let currentUtterance = null;
+
+function speakText(text, onStart, onEnd) {
+  // Cancel any ongoing speech
+  stopSpeaking();
+  
+  if (!text) return;
+  
+  // Clean markdown and code blocks
+  const cleanText = text
+    .replace(/```[\s\S]*?```/g, '') // remove code blocks entirely
+    .replace(/`[^`]+`/g, '') // remove inline code
+    .replace(/[*#_\-~>]/g, '') // remove markdown symbols
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // replace links with text
+    .replace(/&amp;/g, 'and')
+    .replace(/&lt;/g, 'less than')
+    .replace(/&gt;/g, 'greater than')
+    .trim();
+
+  if (!cleanText) return;
+
+  const utterance = new SpeechSynthesisUtterance(cleanText);
+  
+  // Choose voice
+  const voices = window.speechSynthesis.getVoices();
+  const voice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Microsoft'))) || 
+                voices.find(v => v.lang.startsWith('en')) || 
+                voices[0];
+                
+  if (voice) utterance.voice = voice;
+  utterance.rate = 1.05; // Slightly speed up for natural conversation
+  
+  utterance.onstart = () => { if (onStart) onStart(); };
+  utterance.onend = () => { 
+    if (onEnd) onEnd(); 
+    currentUtterance = null; 
+  };
+  utterance.onerror = () => { 
+    if (onEnd) onEnd(); 
+    currentUtterance = null; 
+  };
+
+  currentUtterance = utterance;
+  window.speechSynthesis.speak(utterance);
+}
+
+function stopSpeaking() {
+  window.speechSynthesis.cancel();
+  currentUtterance = null;
+  // Notify message components to update their speaker states
+  document.dispatchEvent(new CustomEvent('speechstopped'));
 }
 
 // ===== VOICE INPUT =====
@@ -475,6 +531,7 @@ function trunc(s, n) {
 }
 
 function setActive(id) {
+  stopSpeaking();
   state.activeId = id;
   store.set(KEYS.activeConv, id);
   renderConvList();
@@ -641,8 +698,38 @@ function appendMsgDOM(msg, animate = true) {
     </div>
     <div class="msg-actions">
       <button class="msg-act-btn" data-a="copy"><i data-lucide="copy"></i> Copy</button>
+      ${!isUser ? `<button class="msg-act-btn" data-a="speak"><i data-lucide="volume-2"></i> Listen</button>` : ''}
       ${!isUser ? `<button class="msg-act-btn" data-a="regen"><i data-lucide="refresh-cw"></i> Retry</button>` : ''}
     </div>`;
+
+  const speakBtn = div.querySelector('[data-a="speak"]');
+  if (speakBtn) {
+    const updateIcon = (speaking) => {
+      speakBtn.innerHTML = speaking
+        ? '<i data-lucide="volume-x"></i> Stop'
+        : '<i data-lucide="volume-2"></i> Listen';
+      lucide.createIcons();
+    };
+
+    speakBtn.addEventListener('click', function() {
+      const isSpeakingThis = window.speechSynthesis.speaking && currentUtterance && currentUtterance.msgId === msg.id;
+      if (isSpeakingThis) {
+        stopSpeaking();
+        updateIcon(false);
+      } else {
+        speakText(msg.content, 
+          () => {
+            if (currentUtterance) currentUtterance.msgId = msg.id;
+            updateIcon(true);
+          },
+          () => updateIcon(false)
+        );
+      }
+    });
+
+    // Reset speaker icon if speech is stopped from another trigger (e.g. typing)
+    document.addEventListener('speechstopped', () => updateIcon(false));
+  }
 
   div.querySelector('[data-a="copy"]').addEventListener('click', function() {
     navigator.clipboard.writeText(msg.content).then(() => {
@@ -705,6 +792,8 @@ async function sendMessage() {
   const text = D.input.value.trim();
   const hasAttachments = state.attachments.length > 0;
   if (!text && !hasAttachments || state.generating) return;
+
+  stopSpeaking();
 
   if (!state.settings.apiKey) { openSettings(); showToast('Add your Gemini API key first!', 'error'); return; }
 
@@ -858,6 +947,29 @@ async function streamResponse() {
     placeholder.content = fullText || '*(No response)*';
     contentEl.innerHTML = renderMD(placeholder.content);
 
+    // Auto read aloud if enabled and request wasn't aborted
+    if (state.settings.readAloud && placeholder.content && (!state.abort || !state.abort.signal.aborted)) {
+      // Find the speak button for this new message to update its icon live
+      const msgDiv = document.querySelector(`.message[data-id="${aiId}"]`);
+      const speakBtn = msgDiv?.querySelector('[data-a="speak"]');
+      const updateIcon = (speaking) => {
+        if (speakBtn) {
+          speakBtn.innerHTML = speaking
+            ? '<i data-lucide="volume-x"></i> Stop'
+            : '<i data-lucide="volume-2"></i> Listen';
+          lucide.createIcons();
+        }
+      };
+
+      speakText(placeholder.content,
+        () => {
+          if (currentUtterance) currentUtterance.msgId = aiId;
+          updateIcon(true);
+        },
+        () => updateIcon(false)
+      );
+    }
+
     div.querySelector('[data-a="copy"]').addEventListener('click', function() {
       navigator.clipboard.writeText(placeholder.content).then(() => {
         this.innerHTML = '<i data-lucide="check"></i> Copied!'; this.classList.add('ok'); lucide.createIcons();
@@ -974,6 +1086,7 @@ function openSettings() {
   D.tempSlider.value = state.settings.temperature;
   D.tempDisp.textContent = state.settings.temperature;
   D.tempVal.textContent = state.settings.temperature;
+  D.readAloudToggle.checked = !!state.settings.readAloud;
   buildThemeGrid();
   D.settingsModal.classList.add('open');
   setTimeout(() => D.apiKeyInput.focus(), 120);
@@ -986,6 +1099,7 @@ function saveSettings() {
   state.settings.model = D.modelSelect.value;
   state.settings.systemPrompt = D.sysPrompt.value.trim();
   state.settings.temperature = parseFloat(D.tempSlider.value);
+  state.settings.readAloud = D.readAloudToggle.checked;
   // theme already updated live via swatch click
   saveSets();
   closeSettings();
@@ -1025,6 +1139,7 @@ function exportConvs() {
 // ===== EVENTS =====
 function bindEvents() {
   D.btnNew.addEventListener('click', () => {
+    stopSpeaking();
     state.activeId = null;
     store.set(KEYS.activeConv, null);
     renderConvList(); showWelcome();
@@ -1071,7 +1186,7 @@ function bindEvents() {
 
   D.btnExport.addEventListener('click', exportConvs);
   D.btnSend.addEventListener('click', sendMessage);
-  D.btnStop.addEventListener('click', () => { if (state.abort) state.abort.abort(); });
+  D.btnStop.addEventListener('click', () => { if (state.abort) state.abort.abort(); stopSpeaking(); });
 
   D.input.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
