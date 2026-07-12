@@ -10,7 +10,8 @@ const DEFAULT = {
   systemPrompt: 'You are Chikki, a friendly, witty, and intelligent AI assistant. You remember everything in our conversation history. Be helpful, concise when needed, thorough when required. Use markdown for better formatting. Add a personal, warm touch to your responses.',
   temperature: 0.7,
   theme: 'purple',
-  readAloud: false
+  readAloud: false,
+  voiceName: ''
 };
 
 const KEYS = {
@@ -93,6 +94,7 @@ const D = {
   toggleKey: $('toggle-key-vis'),
   themeGrid: $('theme-grid'),
   readAloudToggle: $('read-aloud-toggle'),
+  ttsVoiceSelect: $('tts-voice-select'),
   // Confirm
   confirmModal: $('confirm-modal'),
   confirmTitle: $('confirm-title'),
@@ -283,10 +285,15 @@ function speakText(text, onStart, onEnd) {
   
   // Choose voice
   const voices = window.speechSynthesis.getVoices();
-  const voice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Microsoft'))) || 
-                voices.find(v => v.lang.startsWith('en')) || 
-                voices[0];
-                
+  let voice = null;
+  if (state.settings.voiceName) {
+    voice = voices.find(v => v.name === state.settings.voiceName);
+  }
+  if (!voice) {
+    voice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Microsoft'))) || 
+            voices.find(v => v.lang.startsWith('en')) || 
+            voices[0];
+  }
   if (voice) utterance.voice = voice;
   utterance.rate = 1.05; // Slightly speed up for natural conversation
   
@@ -659,7 +666,11 @@ function appendMsgDOM(msg, animate = true) {
   const div = document.createElement('div');
   div.className = `message ${isUser ? 'user' : 'ai'}`;
   div.dataset.id = msg.id;
-  if (!animate) div.style.animation = 'none';
+  if (!animate) {
+    div.style.animation = 'none';
+    div.style.opacity = '1';
+    div.style.transform = 'none';
+  }
 
   // Build attachment HTML for user messages
   let attachHtml = '';
@@ -1244,6 +1255,37 @@ function initPWAInstall() {
   });
 }
 
+function populateVoices() {
+  const select = D.ttsVoiceSelect;
+  if (!select) return;
+  
+  const voices = window.speechSynthesis.getVoices();
+  const current = state.settings.voiceName || '';
+  
+  select.innerHTML = '<option value="">Default System Voice</option>';
+  
+  // Filter for English and Hindi voices for clean choice
+  const filtered = voices.filter(v => v.lang.startsWith('en') || v.lang.startsWith('hi'));
+  
+  const voiceList = filtered.length > 0 ? filtered : voices;
+  
+  voiceList.forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v.name;
+    let label = v.name;
+    if (v.name.includes('Google') || v.name.includes('Natural')) {
+      label += ' 🌟';
+    }
+    opt.textContent = `${label} (${v.lang})`;
+    if (v.name === current) opt.selected = true;
+    select.appendChild(opt);
+  });
+}
+
+if (window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = populateVoices;
+}
+
 // ===== INIT =====
 function init() {
   loadState();
@@ -1255,6 +1297,7 @@ function init() {
   renderConvList();
   updateModelBadge();
   updateApiBanner();
+  populateVoices();
   lucide.createIcons();
 
   // Register service worker for PWA offline capability
