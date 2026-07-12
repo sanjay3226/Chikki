@@ -1024,7 +1024,7 @@ async function streamResponse() {
   let systemInstructionText = state.settings.systemPrompt || DEFAULT.systemPrompt;
   if (memories.length > 0) {
     const memoryContext = memories.map(m => `- ${m.fact}`).join('\n');
-    systemInstructionText += `\n\n[PERSISTENT MEMORY CONTEXT]\nUse these facts about the user if relevant to keep responses personalized and remember details:\n${memoryContext}`;
+    systemInstructionText += `\n\n[PERSISTENT MEMORY CONTEXT]\nIMPORTANT: You have a persistent memory. Here are some verified facts about the user. You must remember and respect these facts to keep responses personalized (e.g. use their name, refer to their projects, respect their preferences):\n${memoryContext}`;
   }
 
   const apiMsgs = conv.messages
@@ -1195,7 +1195,10 @@ async function streamResponse() {
 
     // Trigger AI memory context extractor in the background (silent)
     if (state.settings.apiKey && fullText && !fullText.startsWith('⚠️')) {
-      setTimeout(() => extractMemories(placeholder.content), 2000);
+      const currentConvId = state.activeId;
+      const userMsgs = conv.messages.filter(m => m.role === 'user');
+      const lastUserText = userMsgs.length > 0 ? userMsgs[userMsgs.length - 1].content : '';
+      setTimeout(() => extractMemories(currentConvId, lastUserText, placeholder.content), 1000);
     }
   }
 }
@@ -1212,14 +1215,8 @@ async function regenerate(msgId) {
 }
 
 // ===== PERSISTENT AI MEMORY EXTRACTOR =====
-async function extractMemories(assistantText) {
-  if (!state.settings.apiKey) return;
-  const activeConv = state.convs[state.activeId];
-  if (!activeConv || activeConv.messages.length < 2) return;
-
-  const userMsgs = activeConv.messages.filter(m => m.role === 'user');
-  if (userMsgs.length === 0) return;
-  const lastUserMsg = userMsgs[userMsgs.length - 1].content;
+async function extractMemories(convId, userText, assistantText) {
+  if (!state.settings.apiKey || !convId || !userText || !assistantText) return;
 
   const prompt = `You are Chikki's memory extraction module.
 Analyze this short conversation turn and extract any persistent facts about the user (e.g. name, age, developer language preferences, theme choices, project details, personal likes/dislikes).
@@ -1228,10 +1225,10 @@ Keep facts very short and user-focused, starting with "User...", e.g. "User's na
 Respond ONLY with a valid JSON array of strings containing the facts. If no facts are found, return [].
 Example output: ["User prefers dark themes", "User is learning Python"]
 
-User: "${lastUserMsg.slice(0, 500)}"
+User: "${userText.slice(0, 500)}"
 Assistant: "${assistantText.slice(0, 1000)}"`;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${state.settings.apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${state.settings.model || DEFAULT.model}:generateContent?key=${state.settings.apiKey}`;
   const body = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: { temperature: 0.2, responseMimeType: "application/json" }
@@ -1246,12 +1243,27 @@ Assistant: "${assistantText.slice(0, 1000)}"`;
       },
       body: JSON.stringify(body)
     });
-    if (!res.ok) return;
+    if (!res.ok) {
+      console.warn('Memory extraction API warning (HTTP error):', res.status);
+      return;
+    }
     const data = await res.json();
     const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    if (!txt) return;
+    if (!txt) {
+      console.log('Memory extraction: No text candidate returned');
+      return;
+    }
 
-    const newFacts = JSON.parse(txt);
+    // Safely strip markdown code blocks if the model wrapped the JSON
+    let cleanTxt = txt;
+    if (cleanTxt.startsWith('```')) {
+      cleanTxt = cleanTxt.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
+    }
+    cleanTxt = cleanTxt.trim();
+
+    const newFacts = JSON.parse(cleanTxt);
+    console.log('Chikki Memory Brain Extracted:', newFacts);
+    
     if (Array.isArray(newFacts) && newFacts.length > 0) {
       const existingMemories = await db.getAll('memories');
       let added = false;
@@ -1270,7 +1282,7 @@ Assistant: "${assistantText.slice(0, 1000)}"`;
       }
     }
   } catch (e) {
-    console.warn('Memory extraction failed (silent):', e);
+    console.warn('Memory extraction failed:', e);
   }
 }
 
