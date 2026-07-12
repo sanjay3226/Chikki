@@ -2,7 +2,7 @@
 <html lang="en" data-theme="purple">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Chikki — AI with Memory</title>
   <meta name="description" content="Chikki is a premium AI chatbot that remembers your conversations. Voice input, multiple themes, powered by Google Gemini." />
   <link rel="stylesheet" href="style.css" />
@@ -13,6 +13,7 @@
   <meta name="theme-color" content="#7c6bff" id="theme-color-meta" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Chikki" />
   <link rel="apple-touch-icon" href="cat-logo.png" />
   
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
@@ -20,6 +21,11 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 </head>
 <body>
+<noscript>
+  <div style="position:fixed;inset:0;background:#0d0d12;color:#a78bfa;font-family:sans-serif;display:flex;align-items:center;justify-content:center;text-align:center;z-index:9999;padding:24px;">
+    <div><strong style="font-size:20px">JavaScript required</strong><br><span style="opacity:.7;font-size:14px">Chikki needs JavaScript to run. Please enable it in your browser settings.</span></div>
+  </div>
+</noscript>
 
 <!-- Particle canvas -->
 <canvas id="particle-canvas"></canvas>
@@ -33,12 +39,26 @@
         <div class="logo-icon">
           <img src="cat-logo.png" class="cat-img" alt="Chikki cat logo" />
         </div>
-        <span class="logo-text">Chikki</span>
+        <div class="logo-text-wrap">
+          <span class="logo-text">Chikki</span>
+          <span class="logo-subtext">AI with Memory</span>
+        </div>
+        <button class="sidebar-close-btn" id="btn-close-sidebar-mobile" title="Close menu">
+          <i data-lucide="x"></i>
+        </button>
       </div>
       <button class="btn-new-chat" id="btn-new-chat">
         <i data-lucide="plus"></i>
         <span>New Chat</span>
       </button>
+    </div>
+
+    <!-- Brain memory chip -->
+    <div class="memory-badge-container">
+      <div class="memory-brain-chip" id="btn-sidebar-memories">
+        <i data-lucide="brain"></i>
+        <span>🧠 Memories Saved: <strong id="sidebar-mem-count">0</strong></span>
+      </div>
     </div>
 
     <div class="sidebar-search">
@@ -121,6 +141,16 @@
           <span class="prompt-icon">🌌</span>
           <div class="prompt-title">Mind-blowing universe fact</div>
           <div class="prompt-desc">Something rare & fascinating</div>
+        </div>
+        <div class="prompt-card" data-prompt="Write a short, punchy motivational quote and explain why it works psychologically.">
+          <span class="prompt-icon">💪</span>
+          <div class="prompt-title">Motivational quote + science</div>
+          <div class="prompt-desc">With psychological analysis</div>
+        </div>
+        <div class="prompt-card" data-prompt="What are the best hidden AI tools in 2026 that most developers don't know about?">
+          <span class="prompt-icon">🤖</span>
+          <div class="prompt-title">Hidden AI tools 2026</div>
+          <div class="prompt-desc">Best secret dev tools</div>
         </div>
       </div>
     </div>
@@ -207,7 +237,7 @@
         <label class="setting-label" for="model-select"><i data-lucide="cpu"></i> Model</label>
         <select id="model-select" class="setting-input setting-select">
           <optgroup label="⚡ Gemini 3.5 — Latest (2026)">
-            <option value="gemini-3.5-flash">Gemini 3.5 Flash — Fastest & Best ⭐</option>
+            <option value="gemini-3.5-flash">Gemini 3.5 Flash — Fastest &amp; Best ⭐</option>
           </optgroup>
           <optgroup label="🧠 Gemini 3.1 — Balanced">
             <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite — Ultra Fast</option>
@@ -273,6 +303,25 @@
         </div>
       </div>
 
+      <!-- Local Folder Sync (PC only - shown via JS when API available) -->
+      <div class="setting-group" id="local-sync-group" style="display:none">
+        <label class="setting-label"><i data-lucide="folder"></i> PC Local Sync</label>
+        <p class="setting-desc">Link a directory on your PC to auto-save JSON conversation backups in real-time.</p>
+        <button class="btn btn-secondary" id="btn-link-folder" style="width:100%;justify-content:center">
+          <i data-lucide="folder-plus"></i> Link Local Directory
+        </button>
+        <div id="sync-folder-path" style="font-size:11px;color:var(--text-secondary);word-break:break-all;margin-top:4px;"></div>
+      </div>
+
+      <!-- Memory Manager trigger -->
+      <div class="setting-group">
+        <label class="setting-label"><i data-lucide="brain-circuit"></i> Brain Memories</label>
+        <p class="setting-desc">View and manage the persistent facts Chikki remembers about you.</p>
+        <button class="btn btn-secondary" id="btn-open-memories" style="width:100%;justify-content:center">
+          <i data-lucide="settings-2"></i> Manage Brain Memories
+        </button>
+      </div>
+
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" id="cancel-settings">Cancel</button>
@@ -294,6 +343,25 @@
     <div class="modal-footer">
       <button class="btn btn-secondary" id="cancel-confirm">Cancel</button>
       <button class="btn btn-danger" id="ok-confirm"><i data-lucide="trash-2"></i> Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MEMORY MODAL ===== -->
+<div class="modal-overlay" id="memory-modal">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-header">
+      <div class="modal-title"><i data-lucide="brain"></i> Memory Brain Manager</div>
+      <button class="modal-close" id="close-memory-modal"><i data-lucide="x"></i></button>
+    </div>
+    <div class="modal-body">
+      <p class="setting-desc" style="margin-bottom: 12px;">Facts extracted by AI during conversations to provide cross-chat memory:</p>
+      <div class="memory-list" id="memory-list-container">
+        <!-- Populated via JS -->
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" id="btn-close-memory-manager">Done</button>
     </div>
   </div>
 </div>

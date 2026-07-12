@@ -1,11 +1,12 @@
 /* =====================================================
-   Chikki — app.js
-   AI Chatbot with Memory, Voice Input, Themes
+   Chikki — app.js (Beast Mode Revamp)
+   AI Chatbot with IndexedDB, Persistent Memory Brain, 
+   Local Directory Sync, Voice Synthesis & Input
    ===================================================== */
 
 // ===== CONFIG =====
 const DEFAULT = {
-  apiKey: 'AQ.Ab8RN6Jlmiqntaadvv-k9mv73mJ-sdcAEBIt4WxCoglKcCkSMA',
+  apiKey: 'AQ.Ab8RN6IAOuCQ4rRyB7o_G-C-IK1Cv9_sUUdCn5F1mofIxgg1xw',
   model: 'gemini-3.5-flash',
   systemPrompt: 'You are Chikki, a friendly, witty, and intelligent AI assistant. You remember everything in our conversation history. Be helpful, concise when needed, thorough when required. Use markdown for better formatting. Add a personal, warm touch to your responses.',
   temperature: 0.7,
@@ -22,14 +23,14 @@ const KEYS = {
 };
 
 const THEMES = [
-  { id: 'purple',   label: 'Purple',   colors: ['#7c6bff', '#a78bfa', '#0d0d12'] },
-  { id: 'ocean',    label: 'Ocean',    colors: ['#0ea5e9', '#38bdf8', '#060d1a'] },
+  { id: 'purple',   label: 'Purple',   colors: ['#7c3aed', '#a78bfa', '#0a0a0f'] },
+  { id: 'ocean',    label: 'Ocean',    colors: ['#0ea5e9', '#38bdf8', '#040914'] },
   { id: 'midnight', label: 'Dark',     colors: ['#ffffff', '#cccccc', '#000000'] },
   { id: 'rose',     label: 'Rose',     colors: ['#f43f5e', '#fb7185', '#140a10'] },
-  { id: 'forest',   label: 'Forest',   colors: ['#059669', '#34d399', '#080f0a'] },
+  { id: 'forest',   label: 'Forest',   colors: ['#10b981', '#34d399', '#050a07'] },
   { id: 'sunset',   label: 'Sunset',   colors: ['#ea580c', '#fb923c', '#120a04'] },
   { id: 'nord',     label: 'Nord',     colors: ['#5e81ac', '#88c0d0', '#1c2333'] },
-  { id: 'candy',    label: 'Candy',    colors: ['#a21caf', '#e879f9', '#0f080f'] },
+  { id: 'candy',    label: 'Candy',    colors: ['#ec4899', '#f472b6', '#0a040a'] },
 ];
 
 const MODEL_LABELS = {
@@ -54,7 +55,7 @@ let state = {
   attachments: [],   // [{ name, type, b64, dataUrl, isImage }]
 };
 
-// ===== DOM =====
+// ===== DOM SELECTORS =====
 const $ = id => document.getElementById(id);
 const D = {
   sidebar: $('sidebar'),
@@ -83,7 +84,8 @@ const D = {
   modelLabel: $('model-label'),
   apiBanner: $('no-api-banner'),
   toastCont: $('toast-container'),
-  // Settings
+  
+  // Settings Modal Elements
   settingsModal: $('settings-modal'),
   apiKeyInput: $('api-key-input'),
   modelSelect: $('model-select'),
@@ -95,19 +97,159 @@ const D = {
   themeGrid: $('theme-grid'),
   readAloudToggle: $('read-aloud-toggle'),
   ttsVoiceSelect: $('tts-voice-select'),
-  // Confirm
+  btnLinkFolder: $('btn-link-folder'),
+  syncPath: $('sync-folder-path'),
+  btnOpenMemories: $('btn-open-memories'),
+  
+  // Memory Modal Elements
+  btnSidebarMemories: $('btn-sidebar-memories'),
+  sidebarMemCount: $('sidebar-mem-count'),
+  memoryModal: $('memory-modal'),
+  closeMemoryModal: $('close-memory-modal'),
+  btnCloseMemoryManager: $('btn-close-memory-manager'),
+  memoryListContainer: $('memory-list-container'),
+
+  // Confirm Modal Elements
   confirmModal: $('confirm-modal'),
   confirmTitle: $('confirm-title'),
   confirmMsg: $('confirm-msg'),
 };
 
 let confirmCb = null;
+let dirHandle = null;
 
-// ===== STORAGE =====
-const store = {
-  get: (k, fb = null) => { try { const v = localStorage.getItem(k); return v !== null ? JSON.parse(v) : fb; } catch { return fb; } },
-  set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) { console.warn(e); } }
+// ===== INDEXEDDB CLIENT =====
+const db = {
+  dbName: 'chikki_db',
+  dbVersion: 1,
+  _db: null,
+
+  open() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(this.dbName, this.dbVersion);
+      req.onupgradeneeded = (e) => {
+        const d = e.target.result;
+        if (!d.objectStoreNames.contains('conversations')) {
+          d.createObjectStore('conversations', { keyPath: 'id' });
+        }
+        if (!d.objectStoreNames.contains('settings')) {
+          d.createObjectStore('settings', { keyPath: 'id' });
+        }
+        if (!d.objectStoreNames.contains('memories')) {
+          d.createObjectStore('memories', { keyPath: 'id' });
+        }
+      };
+      req.onsuccess = (e) => {
+        this._db = e.target.result;
+        resolve(this._db);
+      };
+      req.onerror = (e) => reject(e.target.error);
+    });
+  },
+
+  getStore(storeName, mode = 'readonly') {
+    const tx = this._db.transaction(storeName, mode);
+    return tx.objectStore(storeName);
+  },
+
+  async get(storeName, key) {
+    return new Promise((resolve, reject) => {
+      const store = this.getStore(storeName);
+      const req = store.get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  },
+
+  async set(storeName, value) {
+    return new Promise((resolve, reject) => {
+      const store = this.getStore(storeName, 'readwrite');
+      const req = store.put(value);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  },
+
+  async delete(storeName, key) {
+    return new Promise((resolve, reject) => {
+      const store = this.getStore(storeName, 'readwrite');
+      const req = store.delete(key);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  },
+
+  async getAll(storeName) {
+    return new Promise((resolve, reject) => {
+      const store = this.getStore(storeName);
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  },
+
+  async clear(storeName) {
+    return new Promise((resolve, reject) => {
+      const store = this.getStore(storeName, 'readwrite');
+      const req = store.clear();
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
 };
+
+// ===== FILE SYSTEM DIRECTORY SYNC =====
+async function selectLocalDirectory() {
+  try {
+    dirHandle = await window.showDirectoryPicker();
+    await db.set('settings', { id: 'dir_handle', handle: dirHandle });
+    D.syncPath.textContent = `Synced: ${dirHandle.name}`;
+    showToast('Local sync folder linked!', 'success');
+    await syncAllToLocal();
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      console.error(err);
+      showToast('Could not link directory', 'error');
+    }
+  }
+}
+
+async function verifyDirPermission() {
+  if (!dirHandle) return false;
+  const opts = { mode: 'readwrite' };
+  if ((await dirHandle.queryPermission(opts)) === 'granted') return true;
+  if ((await dirHandle.requestPermission(opts)) === 'granted') return true;
+  return false;
+}
+
+async function syncAllToLocal() {
+  if (!dirHandle) return;
+  try {
+    const hasPerm = await verifyDirPermission();
+    if (!hasPerm) return;
+
+    // Settings
+    const settingsFile = await dirHandle.getFileHandle('chikki_settings.json', { create: true });
+    const settingsWriter = await settingsFile.createWritable();
+    await settingsWriter.write(JSON.stringify(state.settings, null, 2));
+    await settingsWriter.close();
+
+    // Conversations
+    const convsFile = await dirHandle.getFileHandle('chikki_conversations.json', { create: true });
+    const convsWriter = await convsFile.createWritable();
+    await convsWriter.write(JSON.stringify(state.convs, null, 2));
+    await convsWriter.close();
+
+    // Memories
+    const memories = await db.getAll('memories');
+    const memoriesFile = await dirHandle.getFileHandle('chikki_memories.json', { create: true });
+    const memoriesWriter = await memoriesFile.createWritable();
+    await memoriesWriter.write(JSON.stringify(memories, null, 2));
+    await memoriesWriter.close();
+  } catch (err) {
+    console.warn('Local Sync failed (needs page action/permission):', err);
+  }
+}
 
 // ===== FILE UPLOAD =====
 function initFileUpload() {
@@ -263,17 +405,14 @@ function initParticles() {
 let currentUtterance = null;
 
 function speakText(text, onStart, onEnd) {
-  // Cancel any ongoing speech
   stopSpeaking();
-  
   if (!text) return;
-  
-  // Clean markdown and code blocks
+
   const cleanText = text
-    .replace(/```[\s\S]*?```/g, '') // remove code blocks entirely
+    .replace(/```[\s\S]*?```/g, '') // remove code blocks
     .replace(/`[^`]+`/g, '') // remove inline code
     .replace(/[*#_\-~>]/g, '') // remove markdown symbols
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // replace links with text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // replace links
     .replace(/&amp;/g, 'and')
     .replace(/&lt;/g, 'less than')
     .replace(/&gt;/g, 'greater than')
@@ -282,7 +421,7 @@ function speakText(text, onStart, onEnd) {
   if (!cleanText) return;
 
   const utterance = new SpeechSynthesisUtterance(cleanText);
-  
+
   // Choose voice
   const voices = window.speechSynthesis.getVoices();
   let voice = null;
@@ -295,8 +434,8 @@ function speakText(text, onStart, onEnd) {
             voices[0];
   }
   if (voice) utterance.voice = voice;
-  utterance.rate = 1.05; // Slightly speed up for natural conversation
-  
+  utterance.rate = 1.05;
+
   utterance.onstart = () => { if (onStart) onStart(); };
   utterance.onend = () => { 
     if (onEnd) onEnd(); 
@@ -314,12 +453,10 @@ function speakText(text, onStart, onEnd) {
 function stopSpeaking() {
   window.speechSynthesis.cancel();
   currentUtterance = null;
-  // Notify message components to update their speaker states
   document.dispatchEvent(new CustomEvent('speechstopped'));
 }
 
 // ===== VOICE INPUT =====
-// ===== VOICE INPUT (MULTIMODAL ON GEMINI) =====
 let mediaRecorder = null;
 let audioChunks = [];
 let voiceTimer = null;
@@ -328,7 +465,7 @@ let recordingStartTime = 0;
 function initVoice() {
   D.btnMic.addEventListener('click', async () => {
     if (state.generating) return;
-    
+
     if (state.recording) {
       stopVoiceRecording();
     } else {
@@ -341,18 +478,11 @@ async function startVoiceRecording() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     audioChunks = [];
-    
-    // Check supported MIME types for recording
+
     let mimeType = 'audio/webm';
-    if (!MediaRecorder.isTypeSupported(mimeType)) {
-      mimeType = 'audio/ogg';
-    }
-    if (!MediaRecorder.isTypeSupported(mimeType)) {
-      mimeType = 'audio/mp4';
-    }
-    if (!MediaRecorder.isTypeSupported(mimeType)) {
-      mimeType = ''; // Let browser decide
-    }
+    if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/ogg';
+    if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/mp4';
+    if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = '';
 
     const options = mimeType ? { mimeType } : {};
     mediaRecorder = new MediaRecorder(stream, options);
@@ -364,28 +494,25 @@ async function startVoiceRecording() {
     };
 
     mediaRecorder.onstop = async () => {
-      // Release microphone stream tracks
       stream.getTracks().forEach(track => track.stop());
 
       const finalMimeType = mediaRecorder.mimeType || 'audio/webm';
       const audioBlob = new Blob(audioChunks, { type: finalMimeType });
-      
+
       if (audioBlob.size < 1000) {
         showToast('No audio detected', 'error');
         return;
       }
 
-      // Convert blob to base64
       const reader = new FileReader();
       reader.onloadend = async () => {
         const dataUrl = reader.result;
         const b64 = dataUrl.split(',')[1];
-        
-        // Push as audio attachment
+
         const attId = uid();
         const durationSec = Math.round((Date.now() - recordingStartTime) / 1000);
         const name = `Voice Note (${durationSec}s).${finalMimeType.split('/')[1].split(';')[0]}`;
-        
+
         state.attachments.push({
           id: attId,
           name,
@@ -395,10 +522,8 @@ async function startVoiceRecording() {
           isImage: false,
           size: audioBlob.size
         });
-        
+
         showToast('Voice note recorded!', 'success');
-        
-        // Auto-send the voice command
         sendMessage();
       };
       reader.readAsDataURL(audioBlob);
@@ -410,10 +535,9 @@ async function startVoiceRecording() {
     D.btnMic.innerHTML = '<i data-lucide="mic-off"></i>';
     D.input.placeholder = '🎤 Recording voice... click mic again to stop & send';
     lucide.createIcons();
-    
-    mediaRecorder.start(250); // Get chunks every 250ms
-    
-    // Auto stop after 30 seconds to prevent huge files
+
+    mediaRecorder.start(250);
+
     voiceTimer = setTimeout(() => {
       if (state.recording) {
         stopVoiceRecording();
@@ -425,10 +549,6 @@ async function startVoiceRecording() {
     console.error('Microphone access denied or error:', err);
     showToast('Could not access microphone: ' + err.message, 'error');
   }
-}
-
-function toggleVoiceRecording() {
-  // Unused helper, backward compatibility
 }
 
 function stopVoiceRecording() {
@@ -473,25 +593,23 @@ function buildThemeGrid() {
 
 function applyTheme(themeId) {
   document.documentElement.setAttribute('data-theme', themeId);
-  store.set(KEYS.theme, themeId);
+  // theme persisted via saveSets() — no separate store needed
 
-  // Update theme-color meta tag for PWA mobile status bar
   const themeColors = {
-    purple: '#0d0d12',
-    ocean: '#060d1a',
+    purple: '#0a0a0f',
+    ocean: '#040914',
     midnight: '#000000',
     rose: '#140a10',
-    forest: '#080f0a',
+    forest: '#050a07',
     sunset: '#120a04',
     nord: '#1c2333',
-    candy: '#0f080f'
+    candy: '#0a040a'
   };
   const metaTheme = $('theme-color-meta');
   if (metaTheme) {
-    metaTheme.setAttribute('content', themeColors[themeId] || '#0d0d12');
+    metaTheme.setAttribute('content', themeColors[themeId] || '#0a0a0f');
   }
 
-  // Adjust hljs theme for light-ish themes
   const lightThemes = ['nord'];
   const hljsEl = $('hljs-theme');
   if (hljsEl) {
@@ -501,21 +619,43 @@ function applyTheme(themeId) {
   }
 }
 
-// ===== LOAD STATE =====
-function loadState() {
-  state.convs = store.get(KEYS.convs, {});
-  state.settings = { ...DEFAULT, ...store.get(KEYS.settings, {}) };
-  state.activeId = store.get(KEYS.activeConv, null);
-  if (state.activeId && !state.convs[state.activeId]) state.activeId = null;
+// ===== LOAD STATE (INDEXEDDB) =====
+async function loadState() {
+  const savedSettings = await db.get('settings', 'default');
+  state.settings = { ...DEFAULT, ...(savedSettings || {}) };
 
-  const savedTheme = store.get(KEYS.theme, DEFAULT.theme);
-  state.settings.theme = savedTheme;
+  // Upgrade any stale/revoked API keys to the embedded default
+  const revokedKeys = [
+    'AQ.Ab8RN6Jlmiqntaadvv-k9mv73mJ-sdcAEBIt4WxCoglKcCkSMA',
+    'AIzaSy', // placeholder keys
+  ];
+  if (!state.settings.apiKey || revokedKeys.some(k => state.settings.apiKey.startsWith(k))) {
+    state.settings.apiKey = DEFAULT.apiKey;
+    await saveSets();
+  }
+
+  const allConvs = await db.getAll('conversations');
+  state.convs = {};
+  allConvs.forEach(c => {
+    state.convs[c.id] = c;
+  });
+
+  const savedTheme = state.settings.theme || DEFAULT.theme;
   applyTheme(savedTheme);
 }
 
-// ===== STORAGE HELPERS =====
-const saveConvs = () => store.set(KEYS.convs, state.convs);
-const saveSets = () => store.set(KEYS.settings, state.settings);
+async function saveSets() {
+  await db.set('settings', { id: 'default', ...state.settings });
+  syncAllToLocal();
+}
+
+async function saveConvs() {
+  for (const id in state.convs) {
+    await db.set('conversations', state.convs[id]);
+  }
+  syncAllToLocal();
+}
+
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 // ===== CONV MANAGEMENT =====
@@ -528,7 +668,8 @@ function createConv(firstMsg = null) {
     updatedAt: new Date().toISOString()
   };
   state.convs[id] = conv;
-  saveConvs();
+  db.set('conversations', conv);
+  syncAllToLocal();
   return conv;
 }
 
@@ -540,7 +681,6 @@ function trunc(s, n) {
 function setActive(id) {
   stopSpeaking();
   state.activeId = id;
-  store.set(KEYS.activeConv, id);
   renderConvList();
   renderMessages();
   if (window.innerWidth <= 768) closeSidebar();
@@ -552,7 +692,8 @@ function addMsg(convId, role, content, attachments = []) {
   const msg = { id: uid(), role, content, attachments, ts: new Date().toISOString() };
   c.messages.push(msg);
   c.updatedAt = new Date().toISOString();
-  saveConvs();
+  db.set('conversations', c);
+  syncAllToLocal();
   return msg;
 }
 
@@ -576,7 +717,7 @@ function renderConvList() {
 
   const lbl = document.createElement('span');
   lbl.className = 'conv-group-label';
-  lbl.textContent = q ? `Results (${convs.length})` : 'Recent';
+  lbl.textContent = q ? `Results (${convs.length})` : 'Recent Chats';
   D.convList.appendChild(lbl);
 
   convs.forEach(conv => {
@@ -600,10 +741,11 @@ function renderConvList() {
     el.querySelector('[data-a="rename"]').addEventListener('click', e => { e.stopPropagation(); startRename(el, conv); });
     el.querySelector('[data-a="delete"]').addEventListener('click', e => {
       e.stopPropagation();
-      showConfirm(`Delete "${conv.title}"?`, 'This chat will be permanently deleted.', () => {
+      showConfirm(`Delete "${conv.title}"?`, 'This chat will be permanently deleted.', async () => {
+        await db.delete('conversations', conv.id);
         delete state.convs[conv.id];
-        if (state.activeId === conv.id) { state.activeId = null; store.set(KEYS.activeConv, null); }
-        saveConvs(); renderConvList();
+        if (state.activeId === conv.id) { state.activeId = null; }
+        renderConvList();
         if (!state.activeId) showWelcome();
         showToast('Chat deleted', 'success');
       });
@@ -622,9 +764,10 @@ function startRename(el, conv) {
   inp.value = conv.title;
   titleEl.replaceWith(inp);
   inp.focus(); inp.select();
-  const done = () => {
+  const done = async () => {
     conv.title = inp.value.trim() || conv.title;
-    saveConvs();
+    await db.set('conversations', conv);
+    syncAllToLocal();
     renderConvList();
     if (state.activeId === conv.id) D.title.textContent = conv.title;
   };
@@ -672,17 +815,17 @@ function appendMsgDOM(msg, animate = true) {
     div.style.transform = 'none';
   }
 
-  // Build attachment HTML for user messages
+  // Attachment files chip
   let attachHtml = '';
   if (isUser && msg.attachments?.length) {
     msg.attachments.forEach(att => {
       if (att.isImage) {
-        attachHtml += `<img src="${att.dataUrl}" class="msg-uploaded-img" alt="${esc(att.name)}" />`;
+        attachHtml += `<img src="${att.dataUrl}" class="msg-uploaded-img" alt="${esc(att.name)}" style="max-width:180px;border-radius:10px;margin-bottom:8px;display:block;border:1px solid var(--border-medium);" />`;
       } else if (att.type.startsWith('audio/')) {
         attachHtml += `<div class="msg-audio-wrap" style="margin-bottom: 8px;">
           <div style="font-size: 11px; opacity: 0.7; margin-bottom: 4px; display: flex; align-items: center; gap: 4px; color: var(--text-primary);">
-            <svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z'></path><path d='M19 10v2a7 7 0 0 1-14 0v-2'></path><line x1='12' y1='19' x2='12' y2='23'></line><line x1='8' y1='23' x2='16' y2='23'></line></svg>
-            Voice Note
+            <svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path d='M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z'></path><path d='M19 10v2a7 7 0 0 1-14 0v-2'></path><line x1='12' y1='19' x2='12' y2='23'></line><line x1='8' y1='23' x2='16' y2='23'></line></svg>
+            Voice Command Note
           </div>
           <audio src="${att.dataUrl}" controls style="max-width: 100%; height: 32px; border-radius: 99px; outline: none;"></audio>
         </div>`;
@@ -695,22 +838,31 @@ function appendMsgDOM(msg, animate = true) {
     });
   }
 
+  // Graceful Inline Error styling
+  const isError = msg.content.startsWith('⚠️');
+
   div.innerHTML = `
     <div class="message-header">
       <div class="msg-avatar ${isUser ? 'user' : 'ai'}">
-        ${isUser ? '👤' : `<img src="cat-logo.png" style="width:24px;height:24px;border-radius:6px;object-fit:cover;" alt="Chikki">`}
+        ${isUser ? '👤' : `<img src="cat-logo.png" style="width:100%;height:100%;object-fit:cover;" alt="Chikki">`}
       </div>
       <span class="msg-role">${isUser ? 'You' : 'Chikki'}</span>
       <span class="msg-time">${fmtTime(msg.ts)}</span>
     </div>
     <div class="msg-bubble">
       ${attachHtml}
-      <div class="msg-content">${isUser ? esc(msg.content).replace(/\n/g,'<br>') : renderMD(msg.content)}</div>
+      ${isError 
+        ? `<div class="error-bubble">
+             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+             <div class="error-msg-text">${renderMD(msg.content)}</div>
+           </div>`
+        : `<div class="msg-content">${isUser ? esc(msg.content).replace(/\n/g,'<br>') : renderMD(msg.content)}</div>`
+      }
     </div>
     <div class="msg-actions">
       <button class="msg-act-btn" data-a="copy"><i data-lucide="copy"></i> Copy</button>
-      ${!isUser ? `<button class="msg-act-btn" data-a="speak"><i data-lucide="volume-2"></i> Listen</button>` : ''}
-      ${!isUser ? `<button class="msg-act-btn" data-a="regen"><i data-lucide="refresh-cw"></i> Retry</button>` : ''}
+      ${(!isUser && !isError) ? `<button class="msg-act-btn" data-a="speak"><i data-lucide="volume-2"></i> Listen</button>` : ''}
+      ${(!isUser) ? `<button class="msg-act-btn" data-a="regen"><i data-lucide="refresh-cw"></i> Retry</button>` : ''}
     </div>`;
 
   const speakBtn = div.querySelector('[data-a="speak"]');
@@ -738,7 +890,6 @@ function appendMsgDOM(msg, animate = true) {
       }
     });
 
-    // Reset speaker icon if speech is stopped from another trigger (e.g. typing)
     document.addEventListener('speechstopped', () => updateIcon(false));
   }
 
@@ -758,11 +909,11 @@ function appendMsgDOM(msg, animate = true) {
   return div;
 }
 
-// ===== MARKDOWN =====
-marked.setOptions({ highlight: (code, lang) => {
-  if (lang && hljs.getLanguage(lang)) return hljs.highlight(code, { language: lang }).value;
-  return hljs.highlightAuto(code).value;
-}, breaks: true, gfm: true });
+// ===== MARKDOWN RENDERING =====
+marked.use({
+  breaks: true,
+  gfm: true
+});
 
 const mdRenderer = new marked.Renderer();
 mdRenderer.code = (code, language) => {
@@ -806,13 +957,10 @@ async function sendMessage() {
 
   stopSpeaking();
 
-  if (!state.settings.apiKey) { openSettings(); showToast('Add your Gemini API key first!', 'error'); return; }
-
   if (!state.activeId) {
     const label = text || state.attachments[0]?.name || 'File upload';
     const conv = createConv(label);
     state.activeId = conv.id;
-    store.set(KEYS.activeConv, conv.id);
     showChat();
     D.title.textContent = conv.title;
     renderConvList();
@@ -827,7 +975,7 @@ async function sendMessage() {
   state.attachments = [];
   renderAttachPreview();
 
-  // Build user message content for display
+  // Show user bubble
   const userMsg = addMsg(state.activeId, 'user', inputText, currentAttachments);
   appendMsgDOM(userMsg);
   renderConvList();
@@ -836,6 +984,22 @@ async function sendMessage() {
   if (conv.messages.length === 1) autoTitle(state.activeId, inputText);
 
   scrollBottom();
+
+  // If missing API Key, show inline message in AI response bubble directly instead of popup
+  if (!state.settings.apiKey) {
+    const aiId = uid();
+    const errorPlaceholder = { 
+      id: aiId, 
+      role: 'ai', 
+      content: '⚠️ **Chikki needs a Gemini API Key to chat.** Please open **Settings** (⚙️) and paste your key. You can get one for free at [aistudio.google.com](https://aistudio.google.com/apikey).', 
+      ts: new Date().toISOString() 
+    };
+    conv.messages.push(errorPlaceholder);
+    appendMsgDOM(errorPlaceholder);
+    await saveConvs();
+    return;
+  }
+
   await streamResponse();
 }
 
@@ -848,12 +1012,18 @@ async function streamResponse() {
   state.abort = new AbortController();
   setGenUI(true);
 
-  // Build Gemini API messages with multimodal support
+  // Fetch cross-conversation memories from IndexedDB to inject
+  const memories = await db.getAll('memories');
+  let systemInstructionText = state.settings.systemPrompt || DEFAULT.systemPrompt;
+  if (memories.length > 0) {
+    const memoryContext = memories.map(m => `- ${m.fact}`).join('\n');
+    systemInstructionText += `\n\n[PERSISTENT MEMORY CONTEXT]\nUse these facts about the user if relevant to keep responses personalized and remember details:\n${memoryContext}`;
+  }
+
   const apiMsgs = conv.messages
     .filter(m => m.content || m.attachments?.length)
     .map(m => {
       const parts = [];
-      // Add attachments as inline data
       if (m.attachments?.length) {
         m.attachments.forEach(att => {
           parts.push({
@@ -874,12 +1044,12 @@ async function streamResponse() {
   const body = {
     contents: apiMsgs,
     generationConfig: { temperature: parseFloat(state.settings.temperature), topP: 0.95, maxOutputTokens: 8192 },
-    ...(state.settings.systemPrompt ? { systemInstruction: { parts: [{ text: state.settings.systemPrompt }] } } : {})
+    ...(systemInstructionText ? { systemInstruction: { parts: [{ text: systemInstructionText }] } } : {})
   };
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${state.settings.model}:streamGenerateContent?alt=sse`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${state.settings.model}:streamGenerateContent?alt=sse&key=${state.settings.apiKey}`;
 
-  // Placeholder message
+  // AI response placeholder
   const aiId = uid();
   const placeholder = { id: aiId, role: 'ai', content: '', ts: new Date().toISOString() };
   conv.messages.push(placeholder);
@@ -889,7 +1059,7 @@ async function streamResponse() {
   div.dataset.id = aiId;
   div.innerHTML = `
     <div class="message-header">
-      <div class="msg-avatar ai"><i data-lucide="sparkles"></i></div>
+      <div class="msg-avatar ai"><img src="cat-logo.png" style="width:100%;height:100%;object-fit:cover;" alt="Chikki"></div>
       <span class="msg-role">Chikki</span>
       <span class="msg-time">${fmtTime(placeholder.ts)}</span>
     </div>
@@ -898,6 +1068,7 @@ async function streamResponse() {
     </div>
     <div class="msg-actions">
       <button class="msg-act-btn" data-a="copy"><i data-lucide="copy"></i> Copy</button>
+      <button class="msg-act-btn" data-a="speak"><i data-lucide="volume-2"></i> Listen</button>
       <button class="msg-act-btn" data-a="regen"><i data-lucide="refresh-cw"></i> Retry</button>
     </div>`;
 
@@ -945,40 +1116,59 @@ async function streamResponse() {
             contentEl.innerHTML = renderMD(fullText) + '<span class="streaming-cursor"></span>';
             scrollBottom();
           }
-        } catch { /* ignore */ }
+        } catch { /* ignore parsing glitch */ }
       }
     }
 
   } catch (e) {
     if (e.name !== 'AbortError') {
-      fullText = fullText || `⚠️ **Error:** ${e.message}`;
-      showToast(e.message, 'error');
+      // Graceful inline markdown block display for error
+      fullText = `⚠️ **Chikki encountered an error generating this response:**\n\n* ${e.message}\n\nPlease check your internet connection or verify your API key configuration in Settings.`;
     }
   } finally {
     placeholder.content = fullText || '*(No response)*';
-    contentEl.innerHTML = renderMD(placeholder.content);
+    
+    // Check if error bubble template is needed
+    if (placeholder.content.startsWith('⚠️')) {
+      contentEl.parentElement.innerHTML = `<div class="error-bubble">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div class="error-msg-text">${renderMD(placeholder.content)}</div>
+      </div>`;
+    } else {
+      contentEl.innerHTML = renderMD(placeholder.content);
+    }
 
-    // Auto read aloud if enabled and request wasn't aborted
-    if (state.settings.readAloud && placeholder.content && (!state.abort || !state.abort.signal.aborted)) {
-      // Find the speak button for this new message to update its icon live
-      const msgDiv = document.querySelector(`.message[data-id="${aiId}"]`);
-      const speakBtn = msgDiv?.querySelector('[data-a="speak"]');
+    // Auto-Listen/Speak
+    const speakBtn = div.querySelector('[data-a="speak"]');
+    if (speakBtn && !placeholder.content.startsWith('⚠️')) {
       const updateIcon = (speaking) => {
-        if (speakBtn) {
-          speakBtn.innerHTML = speaking
-            ? '<i data-lucide="volume-x"></i> Stop'
-            : '<i data-lucide="volume-2"></i> Listen';
-          lucide.createIcons();
-        }
+        speakBtn.innerHTML = speaking
+          ? '<i data-lucide="volume-x"></i> Stop'
+          : '<i data-lucide="volume-2"></i> Listen';
+        lucide.createIcons();
       };
+      speakBtn.addEventListener('click', function() {
+        const isSpeakingThis = window.speechSynthesis.speaking && currentUtterance && currentUtterance.msgId === aiId;
+        if (isSpeakingThis) {
+          stopSpeaking();
+          updateIcon(false);
+        } else {
+          speakText(placeholder.content,
+            () => { if (currentUtterance) currentUtterance.msgId = aiId; updateIcon(true); },
+            () => updateIcon(false)
+          );
+        }
+      });
+      document.addEventListener('speechstopped', () => updateIcon(false));
 
-      speakText(placeholder.content,
-        () => {
-          if (currentUtterance) currentUtterance.msgId = aiId;
-          updateIcon(true);
-        },
-        () => updateIcon(false)
-      );
+      if (state.settings.readAloud && placeholder.content && !(state.abort && state.abort.signal.aborted)) {
+        speakText(placeholder.content,
+          () => { if (currentUtterance) currentUtterance.msgId = aiId; updateIcon(true); },
+          () => updateIcon(false)
+        );
+      }
+    } else if (speakBtn) {
+      speakBtn.style.display = 'none'; // Hide Listen button on error
     }
 
     div.querySelector('[data-a="copy"]').addEventListener('click', function() {
@@ -989,12 +1179,17 @@ async function streamResponse() {
     });
     div.querySelector('[data-a="regen"]').addEventListener('click', () => regenerate(aiId));
 
-    saveConvs();
+    await saveConvs();
     renderConvList();
     state.generating = false;
     state.abort = null;
     setGenUI(false);
     scrollBottom();
+
+    // Trigger AI memory context extractor in the background (silent)
+    if (state.settings.apiKey && fullText && !fullText.startsWith('⚠️')) {
+      setTimeout(() => extractMemories(placeholder.content), 2000);
+    }
   }
 }
 
@@ -1004,14 +1199,122 @@ async function regenerate(msgId) {
   const idx = conv.messages.findIndex(m => m.id === msgId);
   if (idx === -1) return;
   conv.messages.splice(idx);
-  saveConvs(); renderMessages();
+  await saveConvs();
+  renderMessages();
   await streamResponse();
+}
+
+// ===== PERSISTENT AI MEMORY EXTRACTOR =====
+async function extractMemories(assistantText) {
+  if (!state.settings.apiKey) return;
+  const activeConv = state.convs[state.activeId];
+  if (!activeConv || activeConv.messages.length < 2) return;
+
+  const userMsgs = activeConv.messages.filter(m => m.role === 'user');
+  if (userMsgs.length === 0) return;
+  const lastUserMsg = userMsgs[userMsgs.length - 1].content;
+
+  const prompt = `You are Chikki's memory extraction module.
+Analyze this short conversation turn and extract any persistent facts about the user (e.g. name, age, developer language preferences, theme choices, project details, personal likes/dislikes).
+Ignore small talk, transient questions, code answers, or assistant information.
+Keep facts very short and user-focused, starting with "User...", e.g. "User's name is John", "User is building a React app".
+Respond ONLY with a valid JSON array of strings containing the facts. If no facts are found, return [].
+Example output: ["User prefers dark themes", "User is learning Python"]
+
+User: "${lastUserMsg.slice(0, 500)}"
+Assistant: "${assistantText.slice(0, 1000)}"`;
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${state.settings.apiKey}`;
+  const body = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.2, responseMimeType: "application/json" }
+  };
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-goog-api-key': state.settings.apiKey
+      },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!txt) return;
+
+    const newFacts = JSON.parse(txt);
+    if (Array.isArray(newFacts) && newFacts.length > 0) {
+      const existingMemories = await db.getAll('memories');
+      let added = false;
+      for (const fact of newFacts) {
+        const normalized = fact.toLowerCase().trim();
+        const exists = existingMemories.some(m => m.fact.toLowerCase().trim() === normalized);
+        if (!exists && normalized.length > 5) {
+          const mem = { id: uid(), fact, ts: new Date().toISOString() };
+          await db.set('memories', mem);
+          added = true;
+        }
+      }
+      if (added) {
+        updateMemoryCount();
+        syncAllToLocal();
+      }
+    }
+  } catch (e) {
+    console.warn('Memory extraction failed (silent):', e);
+  }
+}
+
+async function updateMemoryCount() {
+  const memories = await db.getAll('memories');
+  if (D.sidebarMemCount) D.sidebarMemCount.textContent = memories.length;
+}
+
+async function renderMemories() {
+  const container = D.memoryListContainer;
+  if (!container) return;
+
+  const memories = await db.getAll('memories');
+  container.innerHTML = '';
+
+  if (memories.length === 0) {
+    container.innerHTML = '<div class="memory-empty">Chikki has not learned any persistent facts yet. Simply chat with her!</div>';
+    return;
+  }
+
+  memories.forEach(m => {
+    const el = document.createElement('div');
+    el.className = 'memory-item';
+    el.innerHTML = `
+      <span class="memory-item-text">${esc(m.fact)}</span>
+      <button class="memory-item-delete" data-id="${m.id}"><i data-lucide="trash-2"></i></button>
+    `;
+    el.querySelector('.memory-item-delete').addEventListener('click', async () => {
+      await db.delete('memories', m.id);
+      renderMemories();
+      updateMemoryCount();
+      syncAllToLocal();
+    });
+    container.appendChild(el);
+  });
+  lucide.createIcons();
+}
+
+function openMemoryModal() {
+  renderMemories();
+  D.memoryModal.classList.add('open');
+}
+
+function closeMemoryModal() {
+  D.memoryModal.classList.remove('open');
 }
 
 async function autoTitle(convId, firstMsg) {
   if (!state.settings.apiKey) return;
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${state.settings.apiKey}`;
     const body = {
       contents: [{ role: 'user', parts: [{ text: `Generate a catchy chat title (max 5 words, no quotes, no punctuation) for: "${firstMsg.slice(0, 200)}"` }] }],
       generationConfig: { temperature: 0.4, maxOutputTokens: 20 }
@@ -1028,7 +1331,9 @@ async function autoTitle(convId, firstMsg) {
     const title = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     if (title && state.convs[convId]) {
       state.convs[convId].title = title;
-      saveConvs(); renderConvList();
+      await db.set('conversations', state.convs[convId]);
+      syncAllToLocal();
+      renderConvList();
       if (state.activeId === convId) D.title.textContent = title;
     }
   } catch { /* silent */ }
@@ -1046,7 +1351,8 @@ const scrollBottom = () => { D.msgsArea.scrollTop = D.msgsArea.scrollHeight; };
 
 function autoResize() {
   D.input.style.height = 'auto';
-  D.input.style.height = Math.min(D.input.scrollHeight, 180) + 'px';
+  const maxH = window.innerWidth <= 768 ? 120 : 180;
+  D.input.style.height = Math.min(D.input.scrollHeight, maxH) + 'px';
 }
 
 const esc = t => { const d = document.createElement('div'); d.appendChild(document.createTextNode(t)); return d.innerHTML; };
@@ -1098,6 +1404,7 @@ function openSettings() {
   D.tempDisp.textContent = state.settings.temperature;
   D.tempVal.textContent = state.settings.temperature;
   D.readAloudToggle.checked = !!state.settings.readAloud;
+  populateVoices();
   buildThemeGrid();
   D.settingsModal.classList.add('open');
   setTimeout(() => D.apiKeyInput.focus(), 120);
@@ -1105,14 +1412,14 @@ function openSettings() {
 
 function closeSettings() { D.settingsModal.classList.remove('open'); }
 
-function saveSettings() {
+async function saveSettings() {
   state.settings.apiKey = D.apiKeyInput.value.trim();
   state.settings.model = D.modelSelect.value;
   state.settings.systemPrompt = D.sysPrompt.value.trim();
   state.settings.temperature = parseFloat(D.tempSlider.value);
   state.settings.readAloud = D.readAloudToggle.checked;
-  // theme already updated live via swatch click
-  saveSets();
+  state.settings.voiceName = D.ttsVoiceSelect ? D.ttsVoiceSelect.value : '';
+  await saveSets();
   closeSettings();
   updateModelBadge();
   updateApiBanner();
@@ -1147,18 +1454,22 @@ function exportConvs() {
   showToast('Chats exported!', 'success');
 }
 
-// ===== EVENTS =====
+// ===== EVENTS BINDINGS =====
 function bindEvents() {
   D.btnNew.addEventListener('click', () => {
     stopSpeaking();
     state.activeId = null;
-    store.set(KEYS.activeConv, null);
     renderConvList(); showWelcome();
     D.input.focus();
   });
 
   D.btnToggle.addEventListener('click', toggleSidebar);
   D.overlay.addEventListener('click', closeSidebar);
+  
+  const closeBtnMobile = $('btn-close-sidebar-mobile');
+  if (closeBtnMobile) {
+    closeBtnMobile.addEventListener('click', closeSidebar);
+  }
 
   [D.btnSettings, D.btnSettingsFoot].forEach(b => b.addEventListener('click', openSettings));
   D.modelBadge.addEventListener('click', openSettings);
@@ -1187,9 +1498,9 @@ function bindEvents() {
 
   D.btnClear.addEventListener('click', () => {
     if (!Object.keys(state.convs).length) { showToast('No chats to clear', 'error'); return; }
-    showConfirm('Clear All Chats?', 'All conversations will be permanently deleted.', () => {
+    showConfirm('Clear All Chats?', 'All conversations will be permanently deleted.', async () => {
+      await db.clear('conversations');
       state.convs = {}; state.activeId = null;
-      saveConvs(); store.set(KEYS.activeConv, null);
       renderConvList(); showWelcome();
       showToast('All chats cleared!', 'success');
     });
@@ -1219,8 +1530,31 @@ function bindEvents() {
 
   document.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); D.btnNew.click(); }
-    if (e.key === 'Escape') { closeSettings(); closeConfirm(); }
+    if (e.key === 'Escape') { closeSettings(); closeConfirm(); closeMemoryModal(); }
   });
+
+  // Directory local picker binding
+  if (D.btnLinkFolder) {
+    D.btnLinkFolder.addEventListener('click', selectLocalDirectory);
+  }
+
+  // Memory managers bindings
+  if (D.btnOpenMemories) {
+    D.btnOpenMemories.addEventListener('click', () => {
+      closeSettings();
+      openMemoryModal();
+    });
+  }
+  if (D.btnSidebarMemories) {
+    D.btnSidebarMemories.addEventListener('click', openMemoryModal);
+  }
+  if (D.closeMemoryModal) {
+    D.closeMemoryModal.addEventListener('click', closeMemoryModal);
+  }
+  if (D.btnCloseMemoryManager) {
+    D.btnCloseMemoryManager.addEventListener('click', closeMemoryModal);
+  }
+  D.memoryModal.addEventListener('click', e => { if (e.target === D.memoryModal) closeMemoryModal(); });
 }
 
 // ===== PWA INSTALLATION TRIGGER =====
@@ -1240,7 +1574,6 @@ function initPWAInstall() {
       if (!deferredPrompt) return;
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
-      console.log(`User response to install prompt: ${outcome}`);
       deferredPrompt = null;
       const installGroup = $('pwa-install-group');
       if (installGroup) installGroup.style.display = 'none';
@@ -1264,9 +1597,7 @@ function populateVoices() {
   
   select.innerHTML = '<option value="">Default System Voice</option>';
   
-  // Filter for English and Hindi voices for clean choice
   const filtered = voices.filter(v => v.lang.startsWith('en') || v.lang.startsWith('hi'));
-  
   const voiceList = filtered.length > 0 ? filtered : voices;
   
   voiceList.forEach(v => {
@@ -1286,9 +1617,10 @@ if (window.speechSynthesis) {
   window.speechSynthesis.onvoiceschanged = populateVoices;
 }
 
-// ===== INIT =====
-function init() {
-  loadState();
+// ===== INITIALIZE =====
+async function init() {
+  await db.open();
+  await loadState();
   bindEvents();
   initVoice();
   initFileUpload();
@@ -1298,9 +1630,23 @@ function init() {
   updateModelBadge();
   updateApiBanner();
   populateVoices();
+  updateMemoryCount();
   lucide.createIcons();
 
-  // Register service worker for PWA offline capability
+  // Load local folder handle if stored
+  const storedHandleObj = await db.get('settings', 'dir_handle');
+  if (storedHandleObj && storedHandleObj.handle) {
+    dirHandle = storedHandleObj.handle;
+    if (D.syncPath) D.syncPath.textContent = `✓ Synced: ${dirHandle.name}`;
+  }
+
+  // Show File System sync option only if supported (Chrome/Edge desktop)
+  if ('showDirectoryPicker' in window) {
+    const fsg = $('local-sync-group');
+    if (fsg) fsg.style.display = 'flex';
+  }
+
+  // SW
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('./sw.js')
@@ -1309,18 +1655,19 @@ function init() {
     });
   }
 
-  // Collapse sidebar by default on mobile screen size
+  // Collapse sidebar on small viewport default
   if (window.innerWidth <= 768) {
     closeSidebar();
   }
 
-  if (state.activeId && state.convs[state.activeId]) renderMessages();
-  else showWelcome();
+  // Start fresh redirect to new welcoming screen always
+  state.activeId = null;
+  showWelcome();
 
   setTimeout(() => D.input.focus(), 150);
   if (!state.settings.apiKey) setTimeout(openSettings, 700);
 
-  console.log('%c🐾 Chikki loaded!', 'color:#a78bfa;font-size:16px;font-weight:800;');
+  console.log('%c🐾 Chikki Loaded in Beast Mode!', 'color:#8b5cf6;font-size:16px;font-weight:800;');
 }
 
 document.addEventListener('DOMContentLoaded', init);

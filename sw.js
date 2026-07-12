@@ -1,4 +1,4 @@
-const CACHE_NAME = 'chikki-cache-v1';
+const CACHE_NAME = 'chikki-cache-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -10,7 +10,7 @@ const ASSETS = [
   'https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css',
-  'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap'
+  'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap'
 ];
 
 self.addEventListener('install', (e) => {

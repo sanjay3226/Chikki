@@ -4,10 +4,10 @@
 
 # Chikki AI 🐱
 
-**A premium PWA AI chatbot that actually remembers you.**
-*Direct Gemini Voice · Offline Cache · 8 Stunning Themes · File Uploads*
+**A beast-mode, client-side PWA chatbot that actually remembers you.**
+*Persistent IndexedDB Memory · Direct Voice Input · Offline Cache · 8 Stunning Themes · PC Folder Sync*
 
-[![Live Demo](https://img.shields.io/badge/🌐_Live_Demo-Visit_App-7c6bff?style=for-the-badge)](https://YOUR-USERNAME.github.io/chikki)
+[![Live Demo](https://img.shields.io/badge/🌐_Live_Demo-Visit_App-7c6bff?style=for-the-badge)](https://sanjay3226.github.io/Chikki)
 [![Gemini API](https://img.shields.io/badge/Powered_by-Gemini_API-4285F4?style=for-the-badge&logo=google)](https://ai.google.dev)
 [![PWA Ready](https://img.shields.io/badge/PWA-Installable-22d3a0?style=for-the-badge&logo=pwa)](https://web.dev/explore/progressive-web-apps)
 [![No Backend](https://img.shields.io/badge/Backend-None_Required-fb923c?style=for-the-badge)](https://pages.github.com)
@@ -18,152 +18,118 @@
 
 ## ✨ What is Chikki?
 
-Chikki is a **fully client-side Progressive Web App (PWA) chatbot** that runs in your browser with zero server code. It connects directly to Google's **Gemini API** using secure headers, storing your **full conversation history** locally in your browser so Chikki has persistent memory of everything you say.
+Chikki is a **fully client-side Progressive Web App (PWA) chatbot** designed to run seamlessly on both mobile devices and PCs with zero backend dependencies. Unlike simple wrappers, Chikki is built for **GitHub Pages** deployment with maximum reliability: it replaces volatile browser caching with **IndexedDB storage**, extracts **persistent AI memories** in the background, and supports **real-time directory syncing** on desktop computers.
 
 ---
 
-## 🚀 Features
+## 🚀 Key Features
 
 | Feature | Description |
 |---------|-------------|
-| 🧠 **Persistent Memory** | Stores chat history in `localStorage` — Chikki retains context across refreshes |
-| 🎤 **Direct Gemini Voice** | Native `MediaRecorder` audio capturing — sends audio directly to Gemini. No browser Speech-to-Text needed |
-| 🔊 **Voice Playback** | Listen back to your recorded voice notes directly in the chat bubbles |
-| 📱 **PWA Standalone** | Installable as a native app on Android, iOS, Windows, and macOS |
-| ❄️ **Offline Cache** | Service worker caches files for immediate load speeds and offline launch |
-| 🎨 **8 HSL Themes** | Purple Night · Ocean Blue · Rose Blossom · Forest · Sunset · Nord · Midnight · Candy |
-| 🔑 **`AQ.` Keys Support** | Fully compatible with new Google AI Studio API key formats via custom headers |
-| 📎 **File Uploads** | Attach images, PDFs, code files — Gemini analyzes them instantly |
-| 🌊 **SSE Streaming** | Word-by-word streaming responses (no loading spinners) |
-| 💻 **Code Highlighter** | Syntax-highlighted code blocks with a one-click copy button |
-| 🔍 **Full-Text Search** | Search through all your stored chats |
-| ✨ **Dynamic Glows** | Particles and mascot shadows glow dynamically depending on active theme |
+| 🧠 **Persistent AI Memory** | Chikki automatically extracts key facts about you in the background and injects them into the Gemini prompt context. |
+| 🗄️ **IndexedDB Storage** | Completely replaces standard `localStorage` with a robust, asynchronous IndexedDB client to prevent data loss. |
+| 📂 **PC Local Directory Sync** | Desktop users can link a local folder to sync conversation backups in real-time. |
+| 🎤 **Native Voice Capture** | Sends microphone audio blobs directly to the Gemini API. No browser Speech-to-Text needed. |
+| 🔊 **Voice Synthesis** | Fluid read-aloud support with customizable speech rates and selectable language voices. |
+| ❄️ **PWA & Offline Cache** | Installs as a standalone native app. Caches static assets to boot instantly and support offline launches. |
+| 🎨 **8 Premium Themes** | Translucent glassmorphism styling utilizing dynamic HSL color blending: *Purple, Ocean, Midnight, Rose, Forest, Sunset, Nord, and Candy*. |
+| 📎 **Multi-File Uploads** | Attach code files, texts, PDFs, or images for immediate visual/textual analysis. |
+| 🌊 **SSE Streaming** | Word-by-word streaming responses with responsive inline error bubble fallback. |
+| 💻 **Code Highlight & Copy** | Syntax-highlighted code blocks with line-number guides and one-click copy buttons. |
+| 🔍 **Full-Text Search** | Quickly search through your entire chat history in the sidebar. |
 
 ---
 
 ## 🎬 Quick Start
 
-### Option 1 — Use directly (GitHub Pages)
+### Option 1 — Open Live App
+👉 **[Launch Chikki AI](https://sanjay3226.github.io/Chikki)**
 
-👉 **[Open Chikki](https://YOUR-USERNAME.github.io/chikki)**
+1. Open **⚙️ Settings** (bottom left corner).
+2. The app comes pre-configured with a secure embedded default key. You can also paste your own [free Gemini API key](https://aistudio.google.com/apikey).
+3. Select your model, theme, and start chatting!
 
-1. Click **⚙️ Settings**
-2. Paste your [free Gemini API key](https://aistudio.google.com/apikey)
-3. Start chatting or recording voice commands!
-
-### Option 2 — Run locally
-
+### Option 2 — Run Locally
 ```bash
-# Clone the repo
-git clone https://github.com/YOUR-USERNAME/chikki.git
-cd chikki
+# Clone the repository
+git clone https://github.com/sanjay3226/Chikki.git
+cd Chikki
 
-# Start a simple server (required for microphone access)
+# Start a local static server (required for microphone and directory sync permissions)
 python -m http.server 8080
 
-# Open in browser
+# Open your browser and navigate to:
 # http://localhost:8080
 ```
 
 ---
 
-## 🔑 Getting Your Free API Key
+## 🧠 The AI Memory Brain
 
-1. Go to **[Google AI Studio](https://aistudio.google.com/apikey)**
-2. Sign in with your Google account and click **"Create API key"**
-3. Copy the key (both `AIza...` and new secure `AQ.`-prefixed keys are supported!)
-4. In Chikki → click **⚙️ Settings** → paste key → **Save**
+After every conversational turn, Chikki triggers a background extraction task:
+1. Gemini analyzes the query/response turn to extract permanent facts about you (e.g. your name, project configurations, favorite stacks, likes/dislikes).
+2. Facts are parsed into structured JSON and written into the **IndexedDB memory store**.
+3. During future messages, the top facts are retrieved and prepended as `[PERSISTENT MEMORY CONTEXT]` inside the Gemini system prompt instructions.
+4. You can view, manage, and delete saved facts at any time by clicking the **🧠 Memories** badge in the sidebar.
+
+---
+
+## 📂 PC Folder Sync (File System Access API)
+
+On desktop browsers (Chrome, Edge, Opera), click the **PC Local Sync** button in Settings:
+- Select a folder on your computer (e.g. `Documents/Chikki`).
+- Grant read/write permission when prompted.
+- Chikki will now save automatic real-time JSON backups of your settings, conversations, and memories directly into your local folder!
 
 ---
 
 ## 🤖 Supported Models
 
-| Model | Rate Limit (Free) | Best For |
-|-------|-------|---------|
-| **Gemini 3.5 Flash** ⭐ | 1,500 RPD / 15 RPM | Daily chats, coding, voice processing |
-| Gemini 3.1 Flash Lite | 1,500 RPD / 15 RPM | Quick Q&A, lightweight lookup |
-| Gemini 3.1 Pro Preview | 100 RPD / 2 RPM | Complex logic & deep reasoning |
-| Gemini 2.5 Flash | 1,500 RPD / 15 RPM | Standard tasks |
-| Gemini 2.5 Pro | 100 RPD / 2 RPM | Long context |
+| Model Name | Purpose | Speed |
+|------------|---------|-------|
+| **Gemini 3.5 Flash** ⭐ | Default model, wittiest, fastest response, multimodal capabilities. | Ultra Fast ⚡ |
+| **Gemini 3.1 Flash Lite** | Extremely resource-light, great for basic lookup. | Instant ⚡ |
+| **Gemini 3.1 Pro** | Deep logic, advanced math, and structured programming analysis. | Intelligent 🧠 |
+| **Gemini 2.5 Pro** | Legacy reasoning engine. | Stable |
 
 ---
 
-## 🏗️ Structure & Tech Stack
+## 🏗️ Technical Stack
+
+- **Zero dependencies. No NPM build step. Pure Vanilla Web Engineering.**
 
 ```
 Chikki/
-├── index.html      — App structure (modals, inputs, PWA headers)
-├── style.css       — Design tokens (8 themes, glassmorphism, responsive queries)
-├── app.js          — Logic (Gemini API, MediaRecorder voice, PWA installer)
-├── manifest.json   — Web App Manifest (metadata, colors, icons) [NEW]
-├── sw.js           — Service Worker (offline asset caching) [NEW]
-└── cat-logo.png    — Cartoon mascot (AI-generated)
+├── index.html      — UI layout, modals, input panels, PWA tags
+├── style.css       — Glassmorphic styling, HSL variables, responsive dynamic layouts
+├── app.js          — IndexedDB storage wrappers, Gemini stream, TTS/STT, file sync handlers
+├── sw.js           — Progressive Web App service worker for offline caching
+├── manifest.json   — PWA standalone installer configurations
+└── cat-logo.png    — App cartoon mascot image
 ```
 
-**Zero dependencies. No build step. No backend.**
-
-| Layer | Technology |
-|-------|-----------|
-| Structure | Vanilla HTML5 |
-| Styling | Vanilla CSS (CSS Variables, Glassmorphism, Responsive Media) |
-| Logic | Vanilla JavaScript (ES6+ Modules) |
-| API Auth | Custom secure `x-goog-api-key` header (protects `AQ.` keys) |
-| Audio | Browser native `MediaRecorder` API (captures WebM/WAV blobs) |
-| Caching | Service Worker API |
-| Markdown | marked.js (CDN) |
-| Code Highlight | highlight.js (CDN) |
-| Icons | Lucide Icons (CDN) |
-
----
-
-## ⌨️ Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Enter` | Send message |
-| `Shift + Enter` | New line |
-| `Ctrl + K` | New conversation |
-| `Escape` | Close settings / confirm modals |
+- **Markdown Engine**: `marked.js`
+- **Syntax Highlighter**: `highlight.js`
+- **Icons Resource**: `Lucide Icons`
+- **Typography**: Google Fonts (`Plus Jakarta Sans`, `JetBrains Mono`)
 
 ---
 
 ## 🔒 Privacy & Safety
 
-- ✅ **API Key Protection**: Stored strictly in your browser's local sandbox (`localStorage`)
-- ✅ **Conversations**: Saved locally; never uploaded to any database
-- ✅ **Zero Telemetry**: No trackers, no cookies, no third-party scripts
-- ✅ **Open Source**: Verify all API transactions in `app.js`
-
----
-
-## 🛠️ Deploy to GitHub Pages
-
-```bash
-# 1. Fork or clone this repo
-git clone https://github.com/YOUR-USERNAME/chikki.git
-
-# 2. Push to your GitHub Pages
-cd chikki
-git add .
-git commit -m "🐱 Deploying Chikki PWA"
-git push origin main
-
-# 3. Turn on GitHub Pages
-# GitHub Settings → Pages → Build and deployment → Branch: main -> / (root) -> Save
-```
+- 🗝️ **Your Key, Your Space**: API keys are saved strictly in your local browser sandbox. They are never transmitted to third-party databases.
+- 💬 **No Cloud Databases**: Conversations are stored inside browser-encrypted IndexedDB partitions.
+- 🚫 **Zero Telemetry**: No trackers, no cookies, and no analytical trackers are embedded.
 
 ---
 
 ## 📄 License
 
-MIT License — free to use, modify, and distribute.
-
----
+This project is licensed under the MIT License — feel free to customize, fork, and self-host!
 
 <div align="center">
 
-Made with 💜 and lots of ☕
-
-**[⭐ Star this repo](https://github.com/YOUR-USERNAME/chikki)** if Chikki made you smile! 🐱
+Made with 💜 and lots of coffee ☕
+**[⭐ Star this repo](https://github.com/sanjay3226/Chikki)** if Chikki made you smile! 🐱
 
 </div>
