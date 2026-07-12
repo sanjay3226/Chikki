@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="purple">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chikki — AI with Memory</title>
+  <meta name="description" content="Chikki is a premium AI chatbot that remembers your conversations. Voice input, multiple themes, powered by Google Gemini." />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" id="hljs-theme" />
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+
+<!-- Particle canvas -->
+<canvas id="particle-canvas"></canvas>
+
+<div id="app">
+
+  <!-- ===== SIDEBAR ===== -->
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">
+        <div class="logo-icon">
+          <img src="cat-logo.png" class="cat-img" alt="Chikki cat logo" />
+        </div>
+        <span class="logo-text">Chikki</span>
+      </div>
+      <button class="btn-new-chat" id="btn-new-chat">
+        <i data-lucide="plus"></i>
+        <span>New Chat</span>
+      </button>
+    </div>
+
+    <div class="sidebar-search">
+      <div class="search-wrap">
+        <i data-lucide="search"></i>
+        <input type="text" id="search-input" placeholder="Search chats…" autocomplete="off" />
+      </div>
+    </div>
+
+    <div class="sidebar-conversations" id="conv-list"></div>
+
+    <div class="sidebar-footer">
+      <button class="footer-btn" id="btn-clear-all" title="Clear all">
+        <i data-lucide="trash-2"></i> Clear
+      </button>
+      <button class="footer-btn" id="btn-export" title="Export">
+        <i data-lucide="download"></i> Export
+      </button>
+      <button class="footer-btn" id="btn-settings-foot" title="Settings">
+        <i data-lucide="settings"></i>
+      </button>
+    </div>
+  </aside>
+
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+  <!-- ===== MAIN ===== -->
+  <main id="main">
+
+    <!-- Topbar -->
+    <header id="topbar">
+      <div class="topbar-left">
+        <button id="btn-toggle-sidebar" title="Toggle sidebar">
+          <i data-lucide="panel-left"></i>
+        </button>
+        <span id="current-title">Chikki AI</span>
+      </div>
+      <div class="topbar-right">
+        <div id="model-badge">
+          <div class="model-dot"></div>
+          <span id="model-label">Gemini 3.5 Flash</span>
+        </div>
+        <button class="topbar-btn" id="btn-settings" title="Settings">
+          <i data-lucide="settings-2"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- Welcome screen -->
+    <div id="welcome-screen">
+      <div class="welcome-glow"></div>
+      <div class="welcome-hero">
+        <div class="welcome-logo-wrap">
+          <div class="orbit"></div>
+          <div class="welcome-logo">
+            <img src="cat-logo.png" class="cat-img-lg" alt="Chikki" />
+          </div>
+        </div>
+        <h1 class="welcome-title">Your AI bestie with memory! ✨</h1>
+        <p class="welcome-sub">I remember everything you tell me — type or speak, I'm always here for you 🐱</p>
+      </div>
+
+      <div class="prompt-grid">
+        <div class="prompt-card" data-prompt="Explain quantum entanglement in the simplest way possible, like I'm 12 years old.">
+          <span class="prompt-icon">⚛️</span>
+          <div class="prompt-title">Explain quantum physics</div>
+          <div class="prompt-desc">Simple explanation for anyone</div>
+        </div>
+        <div class="prompt-card" data-prompt="Write a Python script that checks if a number is prime and finds all primes up to 100.">
+          <span class="prompt-icon">🐍</span>
+          <div class="prompt-title">Python prime checker</div>
+          <div class="prompt-desc">Code with explanation</div>
+        </div>
+        <div class="prompt-card" data-prompt="What are the top 5 productivity tips for students in 2026? Be specific and actionable.">
+          <span class="prompt-icon">📚</span>
+          <div class="prompt-title">Student productivity tips</div>
+          <div class="prompt-desc">Actionable advice for 2026</div>
+        </div>
+        <div class="prompt-card" data-prompt="Tell me the most mind-blowing fact about the universe that most people don't know.">
+          <span class="prompt-icon">🌌</span>
+          <div class="prompt-title">Mind-blowing universe fact</div>
+          <div class="prompt-desc">Something rare & fascinating</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Messages -->
+    <div id="messages-area">
+      <div class="messages-container" id="messages-container">
+        <div id="typing-indicator">
+          <div class="msg-avatar ai" style="width:30px;height:30px;border-radius:8px;background:var(--bg-elevated);border:1px solid var(--border-medium);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <i data-lucide="bot" style="width:15px;height:15px;color:var(--accent-2);"></i>
+          </div>
+          <div class="typing-dots"><span></span><span></span><span></span></div>
+          <span class="typing-text">Chikki is thinking…</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input area -->
+    <div id="input-area">
+      <div class="input-container">
+        <div id="no-api-banner">
+          <i data-lucide="alert-circle"></i>
+          <span>No API key found — click here to add your Gemini API key in Settings.</span>
+        </div>
+
+        <!-- File attach preview strip -->
+        <div id="attach-preview"></div>
+
+        <!-- Hidden file input -->
+        <input type="file" id="file-input" accept="image/*,.pdf,.txt,.csv,.json,.py,.js,.html,.css,.md" multiple style="display:none" />
+
+        <div class="input-wrapper">
+          <textarea
+            id="message-input"
+            placeholder="Message Chikki… or press 🎤 to speak"
+            rows="1"
+            autocomplete="off"
+          ></textarea>
+          <div class="input-btns">
+            <button id="btn-attach" title="Attach files (images, PDF, code…)">
+              <i data-lucide="paperclip"></i>
+            </button>
+            <button id="btn-mic" title="Voice input (click to speak)">
+              <i data-lucide="mic"></i>
+            </button>
+            <button id="btn-stop" title="Stop generating">
+              <i data-lucide="square"></i>
+            </button>
+            <button id="btn-send" title="Send (Enter)">
+              <i data-lucide="send"></i>
+            </button>
+          </div>
+        </div>
+        <div class="input-footer">
+          <span class="input-hint"><kbd>Enter</kbd> send &nbsp;·&nbsp; <kbd>Shift+Enter</kbd> newline &nbsp;·&nbsp; <kbd>📎</kbd> attach files &nbsp;·&nbsp; <kbd>Ctrl+K</kbd> new chat</span>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ===== SETTINGS MODAL ===== -->
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-header">
+      <div class="modal-title"><i data-lucide="settings-2"></i> Settings</div>
+      <button class="modal-close" id="close-settings"><i data-lucide="x"></i></button>
+    </div>
+    <div class="modal-body">
+
+      <!-- API Key -->
+      <div class="setting-group">
+        <label class="setting-label" for="api-key-input"><i data-lucide="key"></i> Gemini API Key</label>
+        <p class="setting-desc">Free key at <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--accent-2)">aistudio.google.com</a>. Stored only in your browser.</p>
+        <div class="key-wrap">
+          <input type="password" id="api-key-input" class="setting-input" placeholder="AIza…" autocomplete="off" />
+          <button class="toggle-key" id="toggle-key-vis"><i data-lucide="eye"></i></button>
+        </div>
+      </div>
+
+      <!-- Model -->
+      <div class="setting-group">
+        <label class="setting-label" for="model-select"><i data-lucide="cpu"></i> Model</label>
+        <select id="model-select" class="setting-input setting-select">
+          <optgroup label="⚡ Gemini 3.5 — Latest (2026)">
+            <option value="gemini-3.5-flash">Gemini 3.5 Flash — Fastest & Best ⭐</option>
+          </optgroup>
+          <optgroup label="🧠 Gemini 3.1 — Balanced">
+            <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite — Ultra Fast</option>
+            <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview — Deep Reasoning</option>
+          </optgroup>
+          <optgroup label="🔬 Gemini 2.5 — Stable (Until Oct 2026)">
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+            <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
+            <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+          </optgroup>
+        </select>
+      </div>
+
+      <!-- Theme -->
+      <div class="setting-group">
+        <label class="setting-label"><i data-lucide="palette"></i> Theme</label>
+        <div class="theme-grid" id="theme-grid">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+
+      <!-- System Prompt -->
+      <div class="setting-group">
+        <label class="setting-label" for="sys-prompt"><i data-lucide="message-square-text"></i> System Prompt</label>
+        <p class="setting-desc">Define Chikki's personality.</p>
+        <textarea id="sys-prompt" class="setting-input setting-textarea" placeholder="You are Chikki, a friendly AI…"></textarea>
+      </div>
+
+      <!-- Temperature -->
+      <div class="setting-group">
+        <label class="setting-label" for="temp-slider"><i data-lucide="thermometer"></i> Temperature: <span id="temp-disp">0.7</span></label>
+        <p class="setting-desc">Lower = focused. Higher = creative & unpredictable.</p>
+        <div class="range-row">
+          <span style="font-size:11px;color:var(--text-muted)">0</span>
+          <input type="range" id="temp-slider" min="0" max="2" step="0.1" value="0.7" />
+          <span style="font-size:11px;color:var(--text-muted)">2</span>
+          <span class="range-val" id="temp-val">0.7</span>
+        </div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="cancel-settings">Cancel</button>
+      <button class="btn btn-primary" id="save-settings"><i data-lucide="save"></i> Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CONFIRM MODAL ===== -->
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-header">
+      <div class="modal-title"><i data-lucide="alert-triangle"></i> <span id="confirm-title">Confirm</span></div>
+      <button class="modal-close" id="close-confirm"><i data-lucide="x"></i></button>
+    </div>
+    <div class="modal-body">
+      <p id="confirm-msg" style="color:var(--text-secondary);font-size:15px;line-height:1.7;"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="cancel-confirm">Cancel</button>
+      <button class="btn btn-danger" id="ok-confirm"><i data-lucide="trash-2"></i> Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TOAST ===== -->
+<div id="toast-container"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
