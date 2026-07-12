@@ -7,6 +7,14 @@
   <meta name="description" content="Chikki is a premium AI chatbot that remembers your conversations. Voice input, multiple themes, powered by Google Gemini." />
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" id="hljs-theme" />
+  
+  <!-- PWA Manifest & Meta Tags -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#7c6bff" id="theme-color-meta" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="apple-touch-icon" href="cat-logo.png" />
+  
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
@@ -219,6 +227,15 @@
         <div class="theme-grid" id="theme-grid">
           <!-- Rendered by JS -->
         </div>
+      </div>
+
+      <!-- PWA Install Button -->
+      <div class="setting-group" id="pwa-install-group" style="display:none">
+        <label class="setting-label"><i data-lucide="download-cloud"></i> App Installation</label>
+        <p class="setting-desc">Install Chikki as a native standalone app on your device.</p>
+        <button class="btn btn-primary" id="btn-pwa-install" style="width:100%;justify-content:center">
+          <i data-lucide="download-cloud"></i> Install Chikki App
+        </button>
       </div>
 
       <!-- System Prompt -->

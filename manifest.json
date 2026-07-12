@@ -1,0 +1,18 @@
+{
+  "name": "Chikki AI",
+  "short_name": "Chikki",
+  "description": "Your friendly AI bestie with persistent memory, voice input, file uploads, and themes.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0d0d12",
+  "theme_color": "#7c6bff",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "cat-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

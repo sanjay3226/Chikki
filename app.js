@@ -256,74 +256,128 @@ function initParticles() {
 }
 
 // ===== VOICE INPUT =====
+// ===== VOICE INPUT (MULTIMODAL ON GEMINI) =====
+let mediaRecorder = null;
+let audioChunks = [];
+let voiceTimer = null;
+let recordingStartTime = 0;
+
 function initVoice() {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) {
-    D.btnMic.title = 'Voice not supported in this browser';
-    D.btnMic.style.opacity = '0.4';
-    D.btnMic.style.cursor = 'not-allowed';
-    return;
-  }
-
-  const recognition = new SR();
-  recognition.continuous = false;
-  recognition.interimResults = true;
-  recognition.lang = 'en-IN'; // Works for both Hindi & English
-  state.recognition = recognition;
-
-  let lastInterim = '';
-
-  recognition.onresult = (e) => {
-    let interim = '', final = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      const t = e.results[i][0].transcript;
-      if (e.results[i].isFinal) final += t;
-      else interim += t;
-    }
-    lastInterim = interim;
-    D.input.value = final || interim;
-    autoResize();
-  };
-
-  recognition.onend = () => {
-    state.recording = false;
-    D.btnMic.classList.remove('recording');
-    D.btnMic.innerHTML = '<i data-lucide="mic"></i>';
-    lucide.createIcons();
-
-    // If we got text, send it
-    const text = D.input.value.trim();
-    if (text) {
-      setTimeout(() => sendMessage(), 300); // Small delay for UX
-    }
-  };
-
-  recognition.onerror = (e) => {
-    state.recording = false;
-    D.btnMic.classList.remove('recording');
-    D.btnMic.innerHTML = '<i data-lucide="mic"></i>';
-    lucide.createIcons();
-    if (e.error !== 'no-speech') showToast('Voice error: ' + e.error, 'error');
-  };
-
-  D.btnMic.addEventListener('click', () => {
+  D.btnMic.addEventListener('click', async () => {
     if (state.generating) return;
+    
     if (state.recording) {
-      recognition.stop();
-      return;
+      stopVoiceRecording();
+    } else {
+      await startVoiceRecording();
     }
+  });
+}
+
+async function startVoiceRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+    
+    // Check supported MIME types for recording
+    let mimeType = 'audio/webm';
+    if (!MediaRecorder.isTypeSupported(mimeType)) {
+      mimeType = 'audio/ogg';
+    }
+    if (!MediaRecorder.isTypeSupported(mimeType)) {
+      mimeType = 'audio/mp4';
+    }
+    if (!MediaRecorder.isTypeSupported(mimeType)) {
+      mimeType = ''; // Let browser decide
+    }
+
+    const options = mimeType ? { mimeType } : {};
+    mediaRecorder = new MediaRecorder(stream, options);
+
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) {
+        audioChunks.push(event.data);
+      }
+    };
+
+    mediaRecorder.onstop = async () => {
+      // Release microphone stream tracks
+      stream.getTracks().forEach(track => track.stop());
+
+      const finalMimeType = mediaRecorder.mimeType || 'audio/webm';
+      const audioBlob = new Blob(audioChunks, { type: finalMimeType });
+      
+      if (audioBlob.size < 1000) {
+        showToast('No audio detected', 'error');
+        return;
+      }
+
+      // Convert blob to base64
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const dataUrl = reader.result;
+        const b64 = dataUrl.split(',')[1];
+        
+        // Push as audio attachment
+        const attId = uid();
+        const durationSec = Math.round((Date.now() - recordingStartTime) / 1000);
+        const name = `Voice Note (${durationSec}s).${finalMimeType.split('/')[1].split(';')[0]}`;
+        
+        state.attachments.push({
+          id: attId,
+          name,
+          type: finalMimeType.split(';')[0],
+          b64,
+          dataUrl,
+          isImage: false,
+          size: audioBlob.size
+        });
+        
+        showToast('Voice note recorded!', 'success');
+        
+        // Auto-send the voice command
+        sendMessage();
+      };
+      reader.readAsDataURL(audioBlob);
+    };
+
     state.recording = true;
-    D.input.value = '';
-    D.input.placeholder = '🎤 Listening… speak now';
+    recordingStartTime = Date.now();
     D.btnMic.classList.add('recording');
     D.btnMic.innerHTML = '<i data-lucide="mic-off"></i>';
+    D.input.placeholder = '🎤 Recording voice... click mic again to stop & send';
     lucide.createIcons();
-    recognition.start();
-    showToast('🎤 Listening… speak now!', 'success');
+    
+    mediaRecorder.start(250); // Get chunks every 250ms
+    
+    // Auto stop after 30 seconds to prevent huge files
+    voiceTimer = setTimeout(() => {
+      if (state.recording) {
+        stopVoiceRecording();
+        showToast('Recording automatically stopped (30s limit)', 'info');
+      }
+    }, 30000);
 
-    // Reset placeholder on stop
-    setTimeout(() => { D.input.placeholder = 'Message Chikki… or press 🎤 to speak'; }, 10000);
-  });
+  } catch (err) {
+    console.error('Microphone access denied or error:', err);
+    showToast('Could not access microphone: ' + err.message, 'error');
+  }
+}
+
+function toggleVoiceRecording() {
+  // Unused helper, backward compatibility
+}
+
+function stopVoiceRecording() {
+  if (voiceTimer) clearTimeout(voiceTimer);
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+  }
+  state.recording = false;
+  D.btnMic.classList.remove('recording');
+  D.btnMic.innerHTML = '<i data-lucide="mic"></i>';
+  D.input.placeholder = 'Message Chikki… or press 🎤 to speak';
+  lucide.createIcons();
 }
 
 // ===== THEME SYSTEM =====
@@ -357,6 +411,22 @@ function buildThemeGrid() {
 function applyTheme(themeId) {
   document.documentElement.setAttribute('data-theme', themeId);
   store.set(KEYS.theme, themeId);
+
+  // Update theme-color meta tag for PWA mobile status bar
+  const themeColors = {
+    purple: '#0d0d12',
+    ocean: '#060d1a',
+    midnight: '#000000',
+    rose: '#140a10',
+    forest: '#080f0a',
+    sunset: '#120a04',
+    nord: '#1c2333',
+    candy: '#0f080f'
+  };
+  const metaTheme = $('theme-color-meta');
+  if (metaTheme) {
+    metaTheme.setAttribute('content', themeColors[themeId] || '#0d0d12');
+  }
 
   // Adjust hljs theme for light-ish themes
   const lightThemes = ['nord'];
@@ -540,6 +610,14 @@ function appendMsgDOM(msg, animate = true) {
     msg.attachments.forEach(att => {
       if (att.isImage) {
         attachHtml += `<img src="${att.dataUrl}" class="msg-uploaded-img" alt="${esc(att.name)}" />`;
+      } else if (att.type.startsWith('audio/')) {
+        attachHtml += `<div class="msg-audio-wrap" style="margin-bottom: 8px;">
+          <div style="font-size: 11px; opacity: 0.7; margin-bottom: 4px; display: flex; align-items: center; gap: 4px; color: var(--text-primary);">
+            <svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z'></path><path d='M19 10v2a7 7 0 0 1-14 0v-2'></path><line x1='12' y1='19' x2='12' y2='23'></line><line x1='8' y1='23' x2='16' y2='23'></line></svg>
+            Voice Note
+          </div>
+          <audio src="${att.dataUrl}" controls style="max-width: 100%; height: 32px; border-radius: 99px; outline: none;"></audio>
+        </div>`;
       } else {
         attachHtml += `<div class="msg-file-chip">
           <svg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'></path><polyline points='14 2 14 8 20 8'></polyline></svg>
@@ -552,7 +630,7 @@ function appendMsgDOM(msg, animate = true) {
   div.innerHTML = `
     <div class="message-header">
       <div class="msg-avatar ${isUser ? 'user' : 'ai'}">
-        ${isUser ? '👤' : `<img src="cat-logo.png" style="width:18px;height:18px;filter:brightness(0) invert(1);opacity:0.9" alt="Chikki">`}
+        ${isUser ? '👤' : `<img src="cat-logo.png" style="width:24px;height:24px;border-radius:6px;object-fit:cover;" alt="Chikki">`}
       </div>
       <span class="msg-role">${isUser ? 'You' : 'Chikki'}</span>
       <span class="msg-time">${fmtTime(msg.ts)}</span>
@@ -640,7 +718,8 @@ async function sendMessage() {
     renderConvList();
   }
 
-  const inputText = text || `[Attached ${state.attachments.length} file(s)]`;
+  const isVoiceCommand = hasAttachments && state.attachments.every(att => att.type.startsWith('audio/')) && !text;
+  const inputText = text || (isVoiceCommand ? "Respond to this voice command." : `[Attached ${state.attachments.length} file(s)]`);
   const currentAttachments = [...state.attachments];
 
   D.input.value = '';
@@ -698,7 +777,7 @@ async function streamResponse() {
     ...(state.settings.systemPrompt ? { systemInstruction: { parts: [{ text: state.settings.systemPrompt }] } } : {})
   };
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${state.settings.model}:streamGenerateContent?alt=sse&key=${state.settings.apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${state.settings.model}:streamGenerateContent?alt=sse`;
 
   // Placeholder message
   const aiId = uid();
@@ -731,7 +810,10 @@ async function streamResponse() {
   try {
     const resp = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-goog-api-key': state.settings.apiKey
+      },
       body: JSON.stringify(body),
       signal: state.abort.signal
     });
@@ -806,12 +888,19 @@ async function regenerate(msgId) {
 async function autoTitle(convId, firstMsg) {
   if (!state.settings.apiKey) return;
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${state.settings.apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent`;
     const body = {
       contents: [{ role: 'user', parts: [{ text: `Generate a catchy chat title (max 5 words, no quotes, no punctuation) for: "${firstMsg.slice(0, 200)}"` }] }],
       generationConfig: { temperature: 0.4, maxOutputTokens: 20 }
     };
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const res = await fetch(url, { 
+      method: 'POST', 
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-goog-api-key': state.settings.apiKey
+      }, 
+      body: JSON.stringify(body) 
+    });
     const data = await res.json();
     const title = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     if (title && state.convs[convId]) {
@@ -1008,17 +1097,64 @@ function bindEvents() {
   });
 }
 
+// ===== PWA INSTALLATION TRIGGER =====
+let deferredPrompt = null;
+
+function initPWAInstall() {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    const installGroup = $('pwa-install-group');
+    if (installGroup) installGroup.style.display = 'flex';
+  });
+
+  const installBtn = $('btn-pwa-install');
+  if (installBtn) {
+    installBtn.addEventListener('click', async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      console.log(`User response to install prompt: ${outcome}`);
+      deferredPrompt = null;
+      const installGroup = $('pwa-install-group');
+      if (installGroup) installGroup.style.display = 'none';
+    });
+  }
+
+  window.addEventListener('appinstalled', () => {
+    deferredPrompt = null;
+    const installGroup = $('pwa-install-group');
+    if (installGroup) installGroup.style.display = 'none';
+    showToast('Chikki installed successfully! 🎉', 'success');
+  });
+}
+
 // ===== INIT =====
 function init() {
   loadState();
   bindEvents();
   initVoice();
   initFileUpload();
+  initPWAInstall();
   initParticles();
   renderConvList();
   updateModelBadge();
   updateApiBanner();
   lucide.createIcons();
+
+  // Register service worker for PWA offline capability
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js')
+        .then(reg => console.log('ServiceWorker registered successfully:', reg.scope))
+        .catch(err => console.warn('ServiceWorker registration failed:', err));
+    });
+  }
+
+  // Collapse sidebar by default on mobile screen size
+  if (window.innerWidth <= 768) {
+    closeSidebar();
+  }
 
   if (state.activeId && state.convs[state.activeId]) renderMessages();
   else showWelcome();
